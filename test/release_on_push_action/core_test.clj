@@ -42,12 +42,31 @@
       "1.0.0" "0.1.0"
       "2.0.0" "1.1.0")))
 
+(deftest should-mark-prerelease?
+  (testing "explicit true"
+    (is (= true (sut/should-mark-prerelease?
+                 {:input/use-prerelease "true" :input/tag-suffix ""}))))
+
+  (testing "explicit false"
+    (is (= false (sut/should-mark-prerelease?
+                  {:input/use-prerelease "false" :input/tag-suffix "-alpha"}))))
+
+  (testing "auto mode with suffix"
+    (is (= true (sut/should-mark-prerelease?
+                 {:input/use-prerelease "auto" :input/tag-suffix "-alpha"}))))
+
+  (testing "auto mode without suffix"
+    (is (= false (sut/should-mark-prerelease?
+                  {:input/use-prerelease "auto" :input/tag-suffix ""})))))
+
 (def base-ctx
   {:token               (System/getenv "GITHUB_TOKEN") ;use Github Actions Token as test token
    :github/api-url      "https://api.github.com"
    :input/max-commits   5
    :input/release-body  ""
    :input/tag-prefix    ""
+   :input/tag-suffix    ""
+   :input/use-prerelease "auto"
    :input/use-github-release-notes false
    :input/release-name  "<RELEASE_TAG>"
    :bump-version-scheme "minor"
@@ -110,7 +129,45 @@
                                                (get :tag_name)))
           "major" "v1.0.0"
           "minor" "v0.1.0"
-          "patch" "v0.0.1")))
+          "patch" "v0.0.1"))
+      (testing "with suffix"
+        (are [suffix expected] (= expected (-> (assoc ctx :input/tag-suffix suffix)
+                                               (sut/generate-new-release-data related-data)
+                                               (get :tag_name)))
+          "-alpha" "0.1.0-alpha"
+          "-rc1"   "0.1.0-rc1"
+          "-beta"  "0.1.0-beta"
+          ""       "0.1.0"))
+      (testing "with prefix and suffix"
+        (are [prefix suffix expected] (= expected (-> (assoc ctx
+                                                             :input/tag-prefix prefix
+                                                             :input/tag-suffix suffix)
+                                                      (sut/generate-new-release-data related-data)
+                                                      (get :tag_name)))
+          "v" "-alpha" "v0.1.0-alpha"
+          "v" "-rc1"   "v0.1.0-rc1"
+          "v" ""       "v0.1.0"
+          ""  "-beta"  "0.1.0-beta")))
+
+    (testing "prerelease field"
+      (testing "auto-detect with suffix"
+        (is (= true (-> (assoc ctx :input/tag-suffix "-alpha")
+                        (sut/generate-new-release-data related-data)
+                        (get :prerelease)))))
+      (testing "auto-detect without suffix"
+        (is (= false (-> ctx
+                         (sut/generate-new-release-data related-data)
+                         (get :prerelease)))))
+      (testing "explicit true overrides"
+        (is (= true (-> (assoc ctx :input/use-prerelease "true")
+                        (sut/generate-new-release-data related-data)
+                        (get :prerelease)))))
+      (testing "explicit false overrides"
+        (is (= false (-> (assoc ctx
+                               :input/tag-suffix "-alpha"
+                               :input/use-prerelease "false")
+                         (sut/generate-new-release-data related-data)
+                         (get :prerelease))))))
 
     (testing "release_name"
       (are [template expected] (= expected (-> (assoc ctx
@@ -192,7 +249,43 @@ Hello World
                                                (get :tag_name)))
           "major" "v1.0.0"
           "minor" "v0.2.0"
-          "patch" "v0.1.1")))
+          "patch" "v0.1.1"))
+      (testing "with suffix"
+        (are [suffix expected] (= expected (-> (assoc ctx :input/tag-suffix suffix)
+                                               (sut/generate-new-release-data related-data)
+                                               (get :tag_name)))
+          "-alpha" "0.2.0-alpha"
+          "-rc1"   "0.2.0-rc1"
+          ""       "0.2.0"))
+      (testing "with prefix and suffix"
+        (are [prefix suffix expected] (= expected (-> (assoc ctx
+                                                             :input/tag-prefix prefix
+                                                             :input/tag-suffix suffix)
+                                                      (sut/generate-new-release-data related-data)
+                                                      (get :tag_name)))
+          "v" "-alpha" "v0.2.0-alpha"
+          "v" "-rc1"   "v0.2.0-rc1"
+          ""  "-beta"  "0.2.0-beta")))
+
+    (testing "prerelease field"
+      (testing "auto-detect with suffix"
+        (is (= true (-> (assoc ctx :input/tag-suffix "-alpha")
+                        (sut/generate-new-release-data related-data)
+                        (get :prerelease)))))
+      (testing "auto-detect without suffix"
+        (is (= false (-> ctx
+                         (sut/generate-new-release-data related-data)
+                         (get :prerelease)))))
+      (testing "explicit true overrides"
+        (is (= true (-> (assoc ctx :input/use-prerelease "true")
+                        (sut/generate-new-release-data related-data)
+                        (get :prerelease)))))
+      (testing "explicit false overrides"
+        (is (= false (-> (assoc ctx
+                               :input/tag-suffix "-alpha"
+                               :input/use-prerelease "false")
+                         (sut/generate-new-release-data related-data)
+                         (get :prerelease))))))
 
     (testing "body"
       (testing ":input/release-body"

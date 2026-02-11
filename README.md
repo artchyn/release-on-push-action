@@ -179,7 +179,7 @@ jobs:
 
 Yes, you can customize this by changing the `tag_prefix`. Here's an example of
 removing the prefix by using an empty string.
- 
+
 ``` yaml
 on:
   push:
@@ -195,6 +195,53 @@ jobs:
       - uses: rymndhng/release-on-push-action@master
         with:
           tag_prefix: ""
+```
+
+### Can I add a suffix to the Git Tags for pre-releases?
+
+Yes, you can add a suffix by using the `tag_suffix` parameter. This is useful for publishing alpha, beta, release candidate, or other pre-release versions.
+
+``` yaml
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  release-on-push:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: rymndhng/release-on-push-action@master
+        with:
+          bump_version_scheme: minor
+          tag_prefix: v
+          tag_suffix: -alpha
+```
+
+This will create tags like `v1.2.3-alpha`. Other common suffixes include:
+- `-beta` for beta releases
+- `-rc1`, `-rc2`, etc. for release candidates
+- `-preview` for preview releases
+
+**Releases with suffixes are automatically marked as pre-releases** in GitHub, following semantic versioning conventions.
+
+#### Controlling Pre-release Behavior
+
+The `use_prerelease` parameter controls whether releases are marked as pre-releases:
+- `auto` (default): Automatically marks as pre-release if `tag_suffix` is non-empty
+- `true`: Always marks as pre-release, even without a suffix
+- `false`: Never marks as pre-release, even with a suffix
+
+Example of forcing a production release with a suffix:
+
+``` yaml
+- uses: rymndhng/release-on-push-action@master
+  with:
+    tag_prefix: v
+    tag_suffix: -internal
+    use_prerelease: false  # Prevent marking as pre-release
 ```
 
 ### Can I change the name of the Release?

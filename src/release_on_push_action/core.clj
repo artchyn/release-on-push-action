@@ -39,6 +39,8 @@
    :input/max-commits   (Integer/parseInt (getenv-or-throw "INPUT_MAX_COMMITS"))
    :input/release-body  (System/getenv "INPUT_RELEASE_BODY")
    :input/tag-prefix    (System/getenv "INPUT_TAG_PREFIX") ;defaults to "v", see default in action.yml
+   :input/tag-suffix    (System/getenv "INPUT_TAG_SUFFIX") ;defaults to "", see default in action.yml
+   :input/use-prerelease (or (System/getenv "INPUT_USE_PRERELEASE") "auto")
    :input/release-name  (System/getenv "INPUT_RELEASE_NAME") ;defaults to "<RELEASE_TAG>", see default in action.yml
    :input/use-github-release-notes (Boolean/parseBoolean (System/getenv "INPUT_USE_GITHUB_RELEASE_NOTES"))
    :bump-version-scheme (assert-valid-bump-version-scheme
@@ -88,6 +90,23 @@
                        :patch [major minor (safe-inc patch)])]
     (str/join "." next-version)))
 
+(defn should-mark-prerelease?
+  "Determines if a release should be marked as a pre-release.
+
+  Rules:
+  - 'true' -> always true
+  - 'false' -> always false
+  - 'auto' -> true if tag-suffix is non-empty, false otherwise
+  "
+  [context]
+  (let [use-prerelease (:input/use-prerelease context)]
+    (case use-prerelease
+      "true"  true
+      "false" false
+      "auto"  (not (empty? (:input/tag-suffix context)))
+      ;; default: treat invalid values as auto
+      (not (empty? (:input/tag-suffix context))))))
+
 (defn norelease-reason [context related-data]
   (cond
     (= :norelease (bump-version-scheme context related-data))
@@ -104,7 +123,7 @@
         current-version     (get-tagged-version (:latest-release related-data))
         next-version        (semver-bump current-version bump-version-scheme)
         base-commit         (get-in related-data [:latest-release-commit :sha])
-        tag-name            (str (:input/tag-prefix context) next-version)
+        tag-name            (str (:input/tag-prefix context) next-version (:input/tag-suffix context))
 
         ;; this is a lazy sequence
         commits-since-last-release (->> (github/list-commits-to-base context base-commit)
@@ -129,7 +148,7 @@
                                  (str/replace "<RELEASE_TAG>" tag-name))
      :body                   body
      :draft                  false
-     :prerelease             false
+     :prerelease             (should-mark-prerelease? context)
      :generate_release_notes (:input/use-github-release-notes context)}))
 
 (defn create-new-release! [context new-release-data]
