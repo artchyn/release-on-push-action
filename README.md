@@ -46,6 +46,7 @@ Allowed values of `bump_version_scheme`:
 - minor
 - major
 - patch
+- **keep**: Keeps the current version unchanged. Useful for iterating on pre-release suffixes (e.g., v2.0.0-rc1 → v2.0.0-rc2). Requirements: (1) Must provide a `tag_suffix`, (2) Previous version must have a suffix, (3) New suffix must differ from the previous one.
 - **norelease**: Performs no release by default. Creation of release delegated to labels on Pull Requests.
 
 For stability, we recommend pinning the version of the action. See [Releases](https://github.com/rymndhng/release-on-push-action/releases).
@@ -64,7 +65,7 @@ There are several approaches:
 
 ### How do I change the bump version scheme using Pull Requests?
 
-Iif the PR has the label `release:major`, `release:minor`, or `release:patch`, this will override `bump_version_scheme`. 
+If the PR has the label `release:major`, `release:minor`, `release:patch`, or `release:keep`, this will override `bump_version_scheme`.
 
 This repository's pull requests are an example of this in action. For example, [#19](https://github.com/rymndhng/release-on-push-action/pull/19).
 
@@ -221,11 +222,38 @@ jobs:
 ```
 
 This will create tags like `v1.2.3-alpha`. Other common suffixes include:
-- `-beta` for beta releases
-- `-rc1`, `-rc2`, etc. for release candidates
-- `-preview` for preview releases
+- `-beta` for beta releases (or `beta` without dash)
+- `-rc1`, `-rc2`, etc. for release candidates (or `rc1`, `rc2` without dash)
+- `-preview` for preview releases (or `preview` without dash)
+
+**Note**: Suffixes can be with or without a leading dash. Both `v2.0.0-rc1` and `v2.0.0rc1` are supported.
 
 **Releases with suffixes are automatically marked as pre-releases** in GitHub, following semantic versioning conventions.
+
+**Tip**: To iterate on pre-release versions (e.g., v2.0.0-rc1 → v2.0.0-rc2), use `bump_version_scheme: keep` or add the `release:keep` label to your PR. This keeps the base version unchanged and only changes the suffix.
+
+**Important**: When using `keep`, you must:
+1. Provide a `tag_suffix` parameter
+2. Have a previous release with a suffix (e.g., `-rc1`, `-alpha`)
+3. Use a different suffix than the previous release
+
+Example workflow for iterating release candidates:
+```yaml
+# First release: v2.0.0-rc1 (using minor/major/patch)
+# Next iteration: v2.0.0-rc2 (using keep)
+- uses: rymndhng/release-on-push-action@master
+  with:
+    bump_version_scheme: keep
+    tag_prefix: v
+    tag_suffix: -rc2  # or "rc2" without dash
+
+# Alternative format without dash: v2.0.0rc1 -> v2.0.0rc2
+- uses: rymndhng/release-on-push-action@master
+  with:
+    bump_version_scheme: keep
+    tag_prefix: v
+    tag_suffix: rc2  # no leading dash
+```
 
 #### Controlling Pre-release Behavior
 

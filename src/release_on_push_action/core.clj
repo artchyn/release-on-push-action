@@ -21,8 +21,8 @@
     false))
 
 (defn assert-valid-bump-version-scheme [bump-version-scheme]
-  (when-not (contains? #{"major" "minor" "patch" "norelease"} bump-version-scheme)
-    (throw (ex-info (str "Invalid bump-version-scheme. Expected one of major|minor|patch|norelease. Got: " bump-version-scheme) {:bump-version-scheme bump-version-scheme})))
+  (when-not (contains? #{"major" "minor" "patch" "keep" "norelease"} bump-version-scheme)
+    (throw (ex-info (str "Invalid bump-version-scheme. Expected one of major|minor|patch|keep|norelease. Got: " bump-version-scheme) {:bump-version-scheme bump-version-scheme})))
   bump-version-scheme)
 
 (defn context-from-env
@@ -72,6 +72,7 @@
       (contains? labels "release:major") :major
       (contains? labels "release:minor") :minor
       (contains? labels "release:patch") :patch
+      (contains? labels "release:keep")  :keep
       :else (keyword (:bump-version-scheme context)))))
 
 (defn get-tagged-version [latest-release]
@@ -79,15 +80,26 @@
         [prefix] (str/split tag #"\d+\.\d+\.\d+")] ;this strips any leading characters before the semver string
     (subs tag (count prefix))))
 
+(defn extract-suffix-from-tag
+  "Extracts the suffix from a tag name (e.g., 'v2.0.0-rc1' -> '-rc1', 'v2.0.0' -> '')"
+  [tag-name]
+  (if-let [match (re-find #"\d+\.\d+\.\d+(.*)" tag-name)]
+    (second match)
+    ""))
+
 (defn safe-inc [n]
   (inc (or n 0)))
 
 (defn semver-bump [version bump]
-  (let [[major minor patch] (map #(Integer/parseInt %) (str/split version #"\."))
+  (let [;; Extract just the semver portion (major.minor.patch) stripping any suffix
+        ;; Handles both "2.0.0-rc1" and "2.0.0rc1" formats
+        base-version (or (re-find #"^\d+\.\d+\.\d+" version) version)
+        [major minor patch] (map #(Integer/parseInt %) (str/split base-version #"\."))
         next-version (condp = bump
                        :major [(safe-inc major) 0 0]
                        :minor [major (safe-inc minor) 0]
-                       :patch [major minor (safe-inc patch)])]
+                       :patch [major minor (safe-inc patch)]
+                       :keep  [major minor patch])]
     (str/join "." next-version)))
 
 (defn should-mark-prerelease?
@@ -107,16 +119,54 @@
       ;; default: treat invalid values as auto
       (boolean (seq (:input/tag-suffix context))))))
 
+(defn validate-keep-bump-scheme
+  "Validates that 'keep' bump scheme is used correctly.
+
+  Requirements:
+  1. Current tag_suffix must be present (non-empty)
+  2. Previous version must have a suffix
+  3. New suffix must be different from previous suffix
+
+  Returns nil if valid, or an error message string if invalid."
+  [context related-data]
+  (let [current-suffix (:input/tag-suffix context)
+        previous-tag   (get-in related-data [:latest-release :tag_name])
+        previous-suffix (when previous-tag (extract-suffix-from-tag previous-tag))]
+    (cond
+      ;; No current suffix provided
+      (or (nil? current-suffix) (empty? current-suffix))
+      "Cannot use 'keep' bump scheme without a tag_suffix. Please provide a suffix (e.g., -rc2, -beta)."
+
+      ;; No previous release exists
+      (nil? previous-tag)
+      "Cannot use 'keep' bump scheme for the first release. Use 'minor', 'major', or 'patch' instead."
+
+      ;; Previous version has no suffix
+      (or (nil? previous-suffix) (empty? previous-suffix))
+      (format "Cannot use 'keep' bump scheme because previous version '%s' has no suffix. Use 'minor', 'major', or 'patch' to bump the version first." previous-tag)
+
+      ;; Current suffix same as previous suffix
+      (= current-suffix previous-suffix)
+      (format "Cannot use 'keep' bump scheme with the same suffix. Previous version '%s' already uses suffix '%s'. Please provide a different suffix." previous-tag previous-suffix)
+
+      ;; All validations passed
+      :else nil)))
+
 (defn norelease-reason [context related-data]
-  (cond
-    (= :norelease (bump-version-scheme context related-data))
-    "Skipping release, no version bump found."
+  (let [scheme (bump-version-scheme context related-data)]
+    (cond
+      (= :norelease scheme)
+      "Skipping release, no version bump found."
 
-    (str/includes? (github/commit-title (:commit related-data)) "[norelease]")
-    "Skipping release. Reason: git commit title contains [norelease]"
+      (str/includes? (github/commit-title (:commit related-data)) "[norelease]")
+      "Skipping release. Reason: git commit title contains [norelease]"
 
-    (contains? (get-labels (get-in related-data [:related-prs])) "norelease")
-    "Skipping release. Reason: related PR has label norelease"))
+      (contains? (get-labels (get-in related-data [:related-prs])) "norelease")
+      "Skipping release. Reason: related PR has label norelease"
+
+      ;; Validate 'keep' bump scheme
+      (= :keep scheme)
+      (validate-keep-bump-scheme context related-data))))
 
 (defn generate-new-release-data [context related-data]
   (let [bump-version-scheme (bump-version-scheme context related-data)

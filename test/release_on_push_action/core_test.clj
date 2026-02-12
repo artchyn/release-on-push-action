@@ -40,7 +40,76 @@
       "1.0.0" "0.0.0"
       "1.0.0" "0.0.1"
       "1.0.0" "0.1.0"
-      "2.0.0" "1.1.0")))
+      "2.0.0" "1.1.0"))
+
+  (testing "keep version"
+    (are [expected input] (= expected (sut/semver-bump input :keep))
+      "0.0.0" "0.0.0"
+      "1.2.3" "1.2.3"
+      "2.0.0" "2.0.0"))
+
+  (testing "bump with suffixed versions"
+    (testing "strips suffix before bumping (with dash)"
+      (are [expected input bump] (= expected (sut/semver-bump input bump))
+        "2.0.0" "2.0.0-rc1"   :keep
+        "3.0.0" "2.0.0-alpha" :major
+        "2.1.0" "2.0.0-beta"  :minor
+        "2.0.1" "2.0.0-rc2"   :patch))
+    (testing "strips suffix before bumping (without dash)"
+      (are [expected input bump] (= expected (sut/semver-bump input bump))
+        "2.0.0" "2.0.0rc1"    :keep
+        "3.0.0" "2.0.0alpha"  :major
+        "2.1.0" "2.0.0beta"   :minor
+        "2.0.1" "2.0.0rc2"    :patch))))
+
+(deftest extract-suffix-from-tag
+  (testing "extract suffix from various tag formats"
+    (are [expected tag] (= expected (sut/extract-suffix-from-tag tag))
+      "-rc1"   "v2.0.0-rc1"
+      "-alpha" "v1.0.0-alpha"
+      "-beta"  "2.0.0-beta"
+      ""       "v2.0.0"
+      ""       "1.0.0"
+      "-rc2"   "prefix2.0.0-rc2"
+      "rc1"    "v2.0.0rc1"    ; without dash
+      "alpha"  "1.0.0alpha"   ; without dash
+      "beta2"  "2.0.0beta2")))
+
+(deftest validate-keep-bump-scheme
+  (testing "missing current suffix"
+    (is (string? (sut/validate-keep-bump-scheme
+                  {:input/tag-suffix ""}
+                  {:latest-release {:tag_name "v1.0.0-rc1"}}))))
+
+  (testing "no previous release"
+    (is (string? (sut/validate-keep-bump-scheme
+                  {:input/tag-suffix "-rc2"}
+                  {:latest-release nil}))))
+
+  (testing "previous version has no suffix"
+    (is (string? (sut/validate-keep-bump-scheme
+                  {:input/tag-suffix "-rc1"}
+                  {:latest-release {:tag_name "v1.0.0"}}))))
+
+  (testing "same suffix as previous (with dash)"
+    (is (string? (sut/validate-keep-bump-scheme
+                  {:input/tag-suffix "-rc1"}
+                  {:latest-release {:tag_name "v1.0.0-rc1"}}))))
+
+  (testing "valid: different suffix (with dash)"
+    (is (nil? (sut/validate-keep-bump-scheme
+               {:input/tag-suffix "-rc2"}
+               {:latest-release {:tag_name "v1.0.0-rc1"}}))))
+
+  (testing "same suffix as previous (without dash)"
+    (is (string? (sut/validate-keep-bump-scheme
+                  {:input/tag-suffix "rc1"}
+                  {:latest-release {:tag_name "v1.0.0rc1"}}))))
+
+  (testing "valid: different suffix (without dash)"
+    (is (nil? (sut/validate-keep-bump-scheme
+               {:input/tag-suffix "rc2"}
+               {:latest-release {:tag_name "v1.0.0rc1"}})))))
 
 (deftest should-mark-prerelease?
   (testing "explicit true"
