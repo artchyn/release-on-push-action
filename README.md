@@ -71,6 +71,23 @@ This repository's pull requests are an example of this in action. For example, [
 
 Only one of these labels should be present on a PR. If there are multiple, the behavior is undefined.
 
+### How do I specify the tag suffix using Pull Request labels?
+
+You can override the `tag_suffix` parameter using a PR label in the format `tag-suffix:VALUE`, where VALUE is your desired suffix.
+
+**Examples:**
+- `tag-suffix:rc2` → sets suffix to `rc2`
+- `tag-suffix:-alpha` → sets suffix to `-alpha`
+- `tag-suffix:beta3` → sets suffix to `beta3`
+
+This is particularly useful for iterating pre-release versions without modifying workflow files:
+
+1. Create PR with labels: `release:keep` and `tag-suffix:rc2`
+2. Merge PR → automatically creates v2.0.0rc2 from v2.0.0rc1
+3. Next iteration: use `tag-suffix:rc3`
+
+**Priority:** Label-based suffix takes precedence over the workflow `tag_suffix` parameter.
+
 ### Do I need to setup Github Action access tokens or any other permission-related thing?
 
 Github Actions will inject a token for this plugin to interact with the API.
@@ -233,11 +250,13 @@ This will create tags like `v1.2.3-alpha`. Other common suffixes include:
 **Tip**: To iterate on pre-release versions (e.g., v2.0.0-rc1 → v2.0.0-rc2), use `bump_version_scheme: keep` or add the `release:keep` label to your PR. This keeps the base version unchanged and only changes the suffix.
 
 **Important**: When using `keep`, you must:
-1. Provide a `tag_suffix` parameter
+1. Provide a `tag_suffix` parameter (or `tag-suffix:VALUE` label)
 2. Have a previous release with a suffix (e.g., `-rc1`, `-alpha`)
 3. Use a different suffix than the previous release
 
-Example workflow for iterating release candidates:
+Example workflows for iterating release candidates:
+
+**Option 1: Using workflow configuration**
 ```yaml
 # First release: v2.0.0-rc1 (using minor/major/patch)
 # Next iteration: v2.0.0-rc2 (using keep)
@@ -246,13 +265,20 @@ Example workflow for iterating release candidates:
     bump_version_scheme: keep
     tag_prefix: v
     tag_suffix: -rc2  # or "rc2" without dash
+```
 
-# Alternative format without dash: v2.0.0rc1 -> v2.0.0rc2
+**Option 2: Using PR labels (recommended for iterative releases)**
+```yaml
+# Workflow stays the same, control via PR labels
 - uses: rymndhng/release-on-push-action@master
   with:
-    bump_version_scheme: keep
+    bump_version_scheme: minor  # overridden by PR label
     tag_prefix: v
-    tag_suffix: rc2  # no leading dash
+
+# PR labels:
+# - release:keep
+# - tag-suffix:rc2
+# Result: v2.0.0rc2 (if previous was v2.0.0rc1)
 ```
 
 #### Controlling Pre-release Behavior

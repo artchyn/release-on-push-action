@@ -111,22 +111,60 @@
                {:input/tag-suffix "rc2"}
                {:latest-release {:tag_name "v1.0.0rc1"}})))))
 
+(deftest extract-suffix-from-labels
+  (testing "extracts suffix from tag-suffix: label"
+    (are [expected labels] (= expected (sut/extract-suffix-from-labels labels))
+      "rc2"    #{"release:minor" "tag-suffix:rc2"}
+      "-alpha" #{"tag-suffix:-alpha" "bug"}
+      "beta"   #{"tag-suffix:beta"}
+      nil      #{"release:major" "bug"}
+      nil      #{})))
+
+(deftest get-effective-tag-suffix
+  (testing "prioritizes label over context"
+    (is (= "rc2"
+           (sut/get-effective-tag-suffix
+            {:input/tag-suffix "-rc1"}
+            {:related-prs [{:labels [{:name "tag-suffix:rc2"}]}]}))))
+
+  (testing "falls back to context when no label"
+    (is (= "-rc1"
+           (sut/get-effective-tag-suffix
+            {:input/tag-suffix "-rc1"}
+            {:related-prs []}))))
+
+  (testing "returns nil when neither label nor context"
+    (is (= nil
+           (sut/get-effective-tag-suffix
+            {:input/tag-suffix nil}
+            {:related-prs []})))))
+
 (deftest should-mark-prerelease?
-  (testing "explicit true"
-    (is (= true (sut/should-mark-prerelease?
-                 {:input/use-prerelease "true" :input/tag-suffix ""}))))
+  (let [empty-related-data {:related-prs []}]
+    (testing "explicit true"
+      (is (= true (sut/should-mark-prerelease?
+                   {:input/use-prerelease "true" :input/tag-suffix ""}
+                   empty-related-data))))
 
-  (testing "explicit false"
-    (is (= false (sut/should-mark-prerelease?
-                  {:input/use-prerelease "false" :input/tag-suffix "-alpha"}))))
+    (testing "explicit false"
+      (is (= false (sut/should-mark-prerelease?
+                    {:input/use-prerelease "false" :input/tag-suffix "-alpha"}
+                    empty-related-data))))
 
-  (testing "auto mode with suffix"
-    (is (= true (sut/should-mark-prerelease?
-                 {:input/use-prerelease "auto" :input/tag-suffix "-alpha"}))))
+    (testing "auto mode with suffix"
+      (is (= true (sut/should-mark-prerelease?
+                   {:input/use-prerelease "auto" :input/tag-suffix "-alpha"}
+                   empty-related-data))))
 
-  (testing "auto mode without suffix"
-    (is (= false (sut/should-mark-prerelease?
-                  {:input/use-prerelease "auto" :input/tag-suffix ""})))))
+    (testing "auto mode without suffix"
+      (is (= false (sut/should-mark-prerelease?
+                    {:input/use-prerelease "auto" :input/tag-suffix ""}
+                    empty-related-data))))
+
+    (testing "auto mode with label-based suffix"
+      (is (= true (sut/should-mark-prerelease?
+                   {:input/use-prerelease "auto" :input/tag-suffix ""}
+                   {:related-prs [{:labels [{:name "tag-suffix:rc2"}]}]}))))))
 
 (def base-ctx
   {:token               (System/getenv "GITHUB_TOKEN") ;use Github Actions Token as test token

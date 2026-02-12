@@ -66,6 +66,28 @@
 (defn get-labels [related-prs]
   (->> related-prs (map :labels) flatten (map :name) set))
 
+(defn extract-suffix-from-labels
+  "Extracts tag suffix from PR labels.
+
+  Looks for labels in format 'tag-suffix:VALUE' where VALUE is the suffix.
+  Examples: 'tag-suffix:rc2' -> 'rc2', 'tag-suffix:-alpha' -> '-alpha'
+
+  Returns nil if no tag-suffix label found."
+  [labels]
+  (some (fn [label]
+          (when (str/starts-with? label "tag-suffix:")
+            (subs label (count "tag-suffix:"))))
+        labels))
+
+(defn get-effective-tag-suffix
+  "Gets the effective tag suffix, prioritizing PR labels over context.
+
+  Priority: PR label > context input"
+  [context related-data]
+  (let [labels (get-labels (:related-prs related-data))
+        label-suffix (extract-suffix-from-labels labels)]
+    (or label-suffix (:input/tag-suffix context))))
+
 (defn bump-version-scheme [context related-data]
   (let [labels (get-labels (:related-prs related-data))]
     (cond
@@ -110,14 +132,15 @@
   - 'false' -> always false
   - 'auto' -> true if tag-suffix is non-empty, false otherwise
   "
-  [context]
-  (let [use-prerelease (:input/use-prerelease context)]
+  [context related-data]
+  (let [use-prerelease (:input/use-prerelease context)
+        effective-suffix (get-effective-tag-suffix context related-data)]
     (case use-prerelease
       "true"  true
       "false" false
-      "auto"  (boolean (seq (:input/tag-suffix context)))
+      "auto"  (boolean (seq effective-suffix))
       ;; default: treat invalid values as auto
-      (boolean (seq (:input/tag-suffix context))))))
+      (boolean (seq effective-suffix)))))
 
 (defn validate-keep-bump-scheme
   "Validates that 'keep' bump scheme is used correctly.
@@ -129,7 +152,7 @@
 
   Returns nil if valid, or an error message string if invalid."
   [context related-data]
-  (let [current-suffix (:input/tag-suffix context)
+  (let [current-suffix (get-effective-tag-suffix context related-data)
         previous-tag   (get-in related-data [:latest-release :tag_name])
         previous-suffix (when previous-tag (extract-suffix-from-tag previous-tag))]
     (cond
@@ -173,7 +196,8 @@
         current-version     (get-tagged-version (:latest-release related-data))
         next-version        (semver-bump current-version bump-version-scheme)
         base-commit         (get-in related-data [:latest-release-commit :sha])
-        tag-name            (str (:input/tag-prefix context) next-version (:input/tag-suffix context))
+        effective-suffix    (get-effective-tag-suffix context related-data)
+        tag-name            (str (:input/tag-prefix context) next-version effective-suffix)
 
         ;; this is a lazy sequence
         commits-since-last-release (->> (github/list-commits-to-base context base-commit)
@@ -198,7 +222,7 @@
                                  (str/replace "<RELEASE_TAG>" tag-name))
      :body                   body
      :draft                  false
-     :prerelease             (should-mark-prerelease? context)
+     :prerelease             (should-mark-prerelease? context related-data)
      :generate_release_notes (:input/use-github-release-notes context)}))
 
 (defn create-new-release! [context new-release-data]
